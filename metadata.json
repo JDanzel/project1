@@ -1,0 +1,5 @@
+{
+  "name": "LifeRPG: Level Up Your Life",
+  "description": "A gamified productivity application that tracks daily habits, skills, and projects as RPG attributes (Physical, Intellect, Health, Professional) using a weekly calendar interface and AI-driven feedback.",
+  "requestFramePermissions": []
+}
