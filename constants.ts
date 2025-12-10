@@ -18,6 +18,13 @@ export const XP_RATES: Record<Difficulty, number> = {
   [Difficulty.EPIC]: 50
 };
 
+export const TASK_DURATIONS: Record<string, number> = {
+  'basic_charge': 20 * 60,
+  'const_run': 60 * 60,
+  'const_strength': 60 * 60,
+  'const_read': 25 * 60
+};
+
 export const PREDEFINED_TASKS: Task[] = [
   // Basic Tasks
   {

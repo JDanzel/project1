@@ -1,18 +1,8 @@
 import { GoogleGenAI } from "@google/genai";
 import { UserStats } from "../types";
 
-const getClient = () => {
-  const apiKey = process.env.API_KEY;
-  if (!apiKey) {
-    console.warn("API Key not found in environment variables.");
-    return null;
-  }
-  return new GoogleGenAI({ apiKey });
-};
-
 export const generateOracleAdvice = async (stats: UserStats): Promise<string> => {
-  const ai = getClient();
-  if (!ai) return "The Oracle is silent (Missing API Key).";
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   const prompt = `
     You are a wise RPG Dungeon Master or Mentor. The user is a hero tracking their real-life stats.

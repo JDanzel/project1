@@ -19,6 +19,14 @@ export enum Difficulty {
   EPIC = 'Epic'
 }
 
+export interface TaskStage {
+  id: string;
+  name: string;
+  date: string; // YYYY-MM-DD
+  difficulty: Difficulty;
+  isCompleted?: boolean; // Helper for UI, state lives in DayLog
+}
+
 export interface Task {
   id: string;
   name: string;
@@ -26,6 +34,7 @@ export interface Task {
   affectedCategories: Category[];
   isCustom?: boolean;
   difficulty?: Difficulty;
+  stages?: TaskStage[];
 }
 
 export interface DayLog {
