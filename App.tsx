@@ -1,28 +1,50 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { PREDEFINED_TASKS, XP_PER_TASK, XP_TO_LEVEL_UP, XP_RATES, TASK_PENALTIES, DEFAULT_PENALTY } from './constants';
-import { Task, DayLog, UserStats, Category, TaskType, Difficulty, TaskStage } from './types';
+import { PREDEFINED_TASKS, PREDEFINED_CHALLENGES, XP_PER_TASK, XP_TO_LEVEL_UP, XP_RATES, TASK_PENALTIES, DEFAULT_PENALTY, LEVEL_RANKS, SPECIALIZATIONS } from './constants';
+import { Task, DayLog, UserStats, Category, TaskType, Difficulty, TaskStage, Challenge, UserProfile } from './types';
 import WeekView from './components/WeekView';
 import StatRadar from './components/StatRadar';
 import ProgressHistoryChart from './components/ProgressHistoryChart';
 import PomodoroPage from './components/PomodoroPage';
 import ProjectsPage from './components/ProjectsPage';
+import ChallengesPage from './components/ChallengesPage';
+import Onboarding from './components/Onboarding';
 import { generateOracleAdvice } from './services/geminiService';
-import { Brain, Sparkles, ScrollText, Trophy, Crown, X, LayoutDashboard, Timer, Briefcase } from 'lucide-react';
+import { 
+  Castle, 
+  Sparkles, 
+  ScrollText, 
+  Trophy, 
+  Crown, 
+  X, 
+  ShieldCheck, 
+  Sword, 
+  Library, 
+  Quote,
+  Map as MapIcon,
+  Flame,
+  ShieldHalf,
+  Star,
+  Zap
+} from 'lucide-react';
 
-type View = 'dashboard' | 'pomodoro' | 'projects';
+type View = 'dashboard' | 'challenges' | 'pomodoro' | 'projects';
 
 const App: React.FC = () => {
-  // State with Lazy Initialization
+  const [profile, setProfile] = useState<UserProfile | null>(() => {
+    const saved = localStorage.getItem('lifeRPG_profile');
+    return saved ? JSON.parse(saved) : null;
+  });
+
   const [tasks, setTasks] = useState<Task[]>(() => {
     const savedTasksRaw = localStorage.getItem('lifeRPG_tasks');
     if (savedTasksRaw) {
         const savedTasks = JSON.parse(savedTasksRaw) as Task[];
-        // Merge saved tasks with predefined to ensure structure updates
-        // Keep custom tasks
         const customTasks = savedTasks.filter(t => t.isCustom);
-        // Ensure predefined tasks are up to date (e.g. new penalties) but allow overriding if needed? 
-        // For simplicity, always use code-defined predefined tasks + saved custom tasks
-        return [...PREDEFINED_TASKS, ...customTasks];
+        // Combine predefined with stored custom ones
+        const predefinedIds = new Set(PREDEFINED_TASKS.map(pt => pt.id));
+        const filteredCustom = customTasks.filter(ct => !predefinedIds.has(ct.id));
+        return [...PREDEFINED_TASKS, ...filteredCustom];
     }
     return PREDEFINED_TASKS;
   });
@@ -32,16 +54,22 @@ const App: React.FC = () => {
     return savedLogs ? JSON.parse(savedLogs) : [];
   });
 
-  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [challenges, setChallenges] = useState<Challenge[]>(() => {
+    const savedChallenges = localStorage.getItem('lifeRPG_challenges');
+    if (savedChallenges) {
+        const parsed = JSON.parse(savedChallenges) as Challenge[];
+        const existingIds = new Set(parsed.map(c => c.id));
+        const newChallenges = PREDEFINED_CHALLENGES.filter(c => !existingIds.has(c.id));
+        return [...parsed, ...newChallenges];
+    }
+    return PREDEFINED_CHALLENGES;
+  });
 
+  const [currentView, setCurrentView] = useState<View>('dashboard');
   const [oracleMessage, setOracleMessage] = useState<string>("Приветствую, герой. Твой путь начинается.");
   const [isOracleLoading, setIsOracleLoading] = useState(false);
-  
-  // Level Up State
   const [showLevelUpModal, setShowLevelUpModal] = useState(false);
-  const [levelUpData, setLevelUpData] = useState<number>(1);
 
-  // Persistence
   useEffect(() => {
     localStorage.setItem('lifeRPG_tasks', JSON.stringify(tasks));
   }, [tasks]);
@@ -50,7 +78,16 @@ const App: React.FC = () => {
     localStorage.setItem('lifeRPG_logs', JSON.stringify(logs));
   }, [logs]);
 
-  // Derived Stats Calculation
+  useEffect(() => {
+    localStorage.setItem('lifeRPG_challenges', JSON.stringify(challenges));
+  }, [challenges]);
+
+  useEffect(() => {
+    if (profile) {
+      localStorage.setItem('lifeRPG_profile', JSON.stringify(profile));
+    }
+  }, [profile]);
+
   const stats: UserStats = useMemo(() => {
     const newStats: UserStats = {
       level: 1,
@@ -61,23 +98,25 @@ const App: React.FC = () => {
       [Category.PROFESSIONAL]: 0,
     };
 
-    // Helper to find stage info if ID belongs to a stage
-    const findStageInfo = (id: string): { stage: TaskStage, parentTask: Task } | null => {
-        for (const task of tasks) {
-            if (task.type === TaskType.TEMPORARY && task.stages) {
-                const stage = task.stages.find(s => s.id === id);
-                if (stage) return { stage, parentTask: task };
-            }
-        }
-        return null;
-    };
-
     logs.forEach(log => {
       log.completedTaskIds.forEach(id => {
-        const task = tasks.find(t => t.id === id);
-        
+        // Find task or stage
+        let task = tasks.find(t => t.id === id);
+        let difficulty = task?.difficulty;
+
+        // If not found directly, it might be a stage ID
+        if (!task) {
+           for (const t of tasks) {
+              const stage = t.stages?.find(s => s.id === id);
+              if (stage) {
+                 task = t;
+                 difficulty = stage.difficulty;
+                 break;
+              }
+           }
+        }
+
         if (task) {
-          // It's a regular task
           if (task.type === TaskType.NEGATIVE) {
             const penalty = TASK_PENALTIES[task.id] || DEFAULT_PENALTY;
             newStats.xp -= penalty;
@@ -85,92 +124,92 @@ const App: React.FC = () => {
                 newStats[cat] = Math.max(0, newStats[cat] - 5);
             });
           } else {
-            const taskXP = task.difficulty ? XP_RATES[task.difficulty] : XP_PER_TASK;
+            const taskXP = difficulty ? XP_RATES[difficulty] : XP_PER_TASK;
             newStats.xp += taskXP;
             task.affectedCategories.forEach(cat => {
               newStats[cat] += 5;
             });
           }
-        } else {
-            // Check if it's a Stage ID
-            const stageInfo = findStageInfo(id);
-            if (stageInfo) {
-                const { stage, parentTask } = stageInfo;
-                // Award XP based on Stage Difficulty
-                newStats.xp += XP_RATES[stage.difficulty];
-                // Award category points based on Parent Task categories
-                parentTask.affectedCategories.forEach(cat => {
-                    newStats[cat] += 5;
-                });
-            }
         }
       });
     });
 
-    // Calculate Level
     const calculatedLevel = 1 + Math.floor(Math.max(0, newStats.xp) / XP_TO_LEVEL_UP);
     newStats.level = Math.max(1, calculatedLevel);
     
     return newStats;
   }, [logs, tasks]);
 
-  // Level Up Detection
-  const prevLevelRef = useRef(stats.level);
+  const titleInfo = useMemo(() => {
+    const rankInfo = [...LEVEL_RANKS].reverse().find(r => stats.level >= r.minLevel) || LEVEL_RANKS[0];
+    const cats = [
+        { id: Category.PHYSICAL, val: stats[Category.PHYSICAL] },
+        { id: Category.INTELLECT, val: stats[Category.INTELLECT] },
+        { id: Category.HEALTH, val: stats[Category.HEALTH] },
+        { id: Category.PROFESSIONAL, val: stats[Category.PROFESSIONAL] },
+    ];
+    const dominant = cats.reduce((prev, curr) => (curr.val > prev.val ? curr : prev));
+    const isBalanced = cats.every(c => Math.abs(c.val - dominant.val) < 15);
+    const spec = isBalanced ? SPECIALIZATIONS.BALANCED : SPECIALIZATIONS[dominant.id as Category];
+    
+    return {
+        full: `${rankInfo.title} ${spec.name}`,
+        rank: rankInfo.title,
+        spec: spec.name,
+        color: spec.color,
+        rankColor: rankInfo.color
+    };
+  }, [stats]);
 
+  const prevLevelRef = useRef(stats.level);
   useEffect(() => {
     if (stats.level > prevLevelRef.current) {
-        setLevelUpData(stats.level);
         setShowLevelUpModal(true);
     }
     prevLevelRef.current = stats.level;
   }, [stats.level]);
 
-  // Handlers
   const handleToggleTask = (date: string, taskId: string) => {
     setLogs(prevLogs => {
       const existingLogIndex = prevLogs.findIndex(l => l.date === date);
       const newLogs = [...prevLogs];
-
       if (existingLogIndex >= 0) {
         const log = { ...newLogs[existingLogIndex] };
         if (log.completedTaskIds.includes(taskId)) {
-          // If toggling from dashboard, we remove it. 
-          // Note: If called from timer to "Complete", we generally want to ADD only.
-          // But using this logic handles both. For timer, we assume user hasn't done it yet today.
           log.completedTaskIds = log.completedTaskIds.filter(id => id !== taskId);
         } else {
           log.completedTaskIds = [...log.completedTaskIds, taskId];
         }
         newLogs[existingLogIndex] = log;
       } else {
-        newLogs.push({
-          date,
-          completedTaskIds: [taskId]
-        });
+        newLogs.push({ date, completedTaskIds: [taskId] });
       }
       return newLogs;
     });
   };
 
-  const handleCompleteTaskFromTimer = (taskId: string, specificDate?: string) => {
-    const date = specificDate || new Date().toISOString().split('T')[0];
-    // Check if already completed to avoid toggling OFF
-    const log = logs.find(l => l.date === date);
-    if (log && log.completedTaskIds.includes(taskId)) {
-        return; // Already done, don't toggle off
-    }
-    handleToggleTask(date, taskId);
+  const handleAddTask = (taskData: Omit<Task, 'id'>) => {
+    const newTask: Task = {
+      ...taskData,
+      id: `task_${Date.now()}`
+    };
+    setTasks(prev => [...prev, newTask]);
+  };
+
+  const handleDeleteTask = (taskId: string) => {
+    setTasks(prev => prev.filter(t => t.id !== taskId));
+    // Also cleanup logs for this task ID if needed (optional but cleaner)
   };
 
   const handleUpdateTask = (taskId: string, updates: Partial<Task>) => {
     setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
   };
 
-  const handleDeleteTask = (taskId: string) => {
-      setTasks(prev => prev.filter(t => t.id !== taskId));
+  const handleCompleteTaskFromTimer = (taskId: string, specificDate?: string) => {
+    const date = specificDate || new Date().toISOString().split('T')[0];
+    handleToggleTask(date, taskId);
   };
 
-  // Project Handlers
   const handleAddProject = (name: string) => {
       const newProject: Task = {
           id: `proj_${Date.now()}`,
@@ -184,128 +223,190 @@ const App: React.FC = () => {
       setTasks(prev => [...prev, newProject]);
   };
 
-  const handleAddStage = (projectId: string, stageData: Omit<TaskStage, 'id'>) => {
-      setTasks(prev => prev.map(t => {
-          if (t.id === projectId) {
-              const newStage: TaskStage = {
-                  ...stageData,
-                  id: `stage_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-              };
-              return { ...t, stages: [...(t.stages || []), newStage] };
-          }
-          return t;
-      }));
+  const handleDeleteProject = (taskId: string) => {
+    setTasks(prev => prev.filter(t => t.id !== taskId));
   };
 
-  const handleUpdateStage = (projectId: string, stageId: string, updates: Partial<TaskStage>) => {
-      setTasks(prev => prev.map(t => {
-          if (t.id === projectId && t.stages) {
-              return {
-                  ...t,
-                  stages: t.stages.map(s => s.id === stageId ? { ...s, ...updates } : s)
-              };
-          }
-          return t;
-      }));
+  const handleUpdateProject = (taskId: string, updates: Partial<Task>) => {
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, ...updates } : t));
   };
 
-  const handleDeleteStage = (projectId: string, stageId: string) => {
-      setTasks(prev => prev.map(t => {
-          if (t.id === projectId) {
-              return { ...t, stages: (t.stages || []).filter(s => s.id !== stageId) };
-          }
-          return t;
-      }));
+  const handleAddStage = (taskId: string, stageData: Omit<TaskStage, 'id'>) => {
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskId) {
+        const newStage: TaskStage = {
+          ...stageData,
+          id: `stage_${Date.now()}`
+        };
+        return { ...t, stages: [...(t.stages || []), newStage] };
+      }
+      return t;
+    }));
+  };
+
+  const handleDeleteStage = (taskId: string, stageId: string) => {
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskId) {
+        return { ...t, stages: (t.stages || []).filter(s => s.id !== stageId) };
+      }
+      return t;
+    }));
+  };
+
+  const handleUpdateStage = (taskId: string, stageId: string, updates: Partial<TaskStage>) => {
+    setTasks(prev => prev.map(t => {
+      if (t.id === taskId) {
+        return {
+          ...t,
+          stages: (t.stages || []).map(s => s.id === stageId ? { ...s, ...updates } : s)
+        };
+      }
+      return t;
+    }));
+  };
+
+  const handleAcceptChallenge = (id: string) => {
+    setChallenges(prev => prev.map(c => 
+      c.id === id ? { ...c, status: 'active', startDate: new Date().toISOString() } : c
+    ));
+  };
+
+  const handleClaimChallenge = (id: string) => {
+    setChallenges(prev => prev.map(c => 
+      c.id === id ? { ...c, status: 'completed' } : c
+    ));
   };
 
   const handleConsultOracle = async () => {
+    if (!profile) return;
     setIsOracleLoading(true);
-    const advice = await generateOracleAdvice(stats);
+    const advice = await generateOracleAdvice(stats, profile);
     setOracleMessage(advice);
     setIsOracleLoading(false);
   };
 
+  const handleOnboardingComplete = (newProfile: UserProfile) => {
+    setProfile(newProfile);
+    setOracleMessage(`Приветствую тебя, ${newProfile.name} из касты ${newProfile.characterClassName}! Твоя история в мире Дисциплины начинается сегодня.`);
+  };
+
+  if (!profile) {
+    return <Onboarding onComplete={handleOnboardingComplete} />;
+  }
+
   return (
-    <div className="min-h-screen pb-24 bg-slate-950 text-slate-100 relative">
+    <div className="min-h-screen pb-24 bg-transparent text-[#2c1810] relative overflow-x-hidden">
       
       {/* Level Up Modal */}
       {showLevelUpModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-300">
-            <div className="relative bg-slate-900 border-2 border-amber-500/50 p-8 rounded-2xl max-w-md w-full text-center shadow-[0_0_50px_rgba(245,158,11,0.3)] transform animate-in zoom-in-95 duration-300 overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-t from-amber-500/10 to-transparent pointer-events-none" />
-                <div className="relative z-10">
-                    <div className="inline-block p-4 rounded-full bg-slate-800 border border-amber-500/30 mb-6 shadow-xl relative group">
-                         <Crown size={48} className="text-amber-400 relative z-10" />
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-md animate-in fade-in duration-500 overflow-hidden">
+            <div className="absolute inset-0 flex items-center justify-center overflow-hidden pointer-events-none">
+               <div className="w-[1200px] h-[1200px] bg-[radial-gradient(circle,rgba(217,119,6,0.3)_0%,transparent_70%)] opacity-50 animate-rays" />
+            </div>
+
+            <div className="absolute inset-0 pointer-events-none">
+              {[...Array(20)].map((_, i) => (
+                <div 
+                  key={i} 
+                  className="absolute animate-float-up text-amber-500"
+                  style={{ 
+                    left: `${Math.random() * 100}%`, 
+                    top: `${100 + Math.random() * 20}%`, 
+                    animationDelay: `${Math.random() * 5}s`,
+                    opacity: 0
+                  }}
+                >
+                  {i % 2 === 0 ? <Star size={Math.random() * 15 + 5} fill="currentColor" /> : <Sparkles size={Math.random() * 15 + 5} />}
+                </div>
+              ))}
+            </div>
+
+            <div className="relative z-10 flex flex-col items-center text-center max-w-lg px-6 animate-in zoom-in-90 duration-700 bg-[#f4e4bc] p-12 rounded-2xl border-4 border-amber-950 shadow-[0_0_50px_rgba(120,53,15,0.5)]">
+                <div className="absolute -top-16 left-1/2 -translate-x-1/2 flex items-center justify-center">
+                   <div className="relative">
+                      <div className="absolute inset-0 bg-amber-500 blur-2xl opacity-40 animate-pulse-gold scale-150" />
+                      <div className="bg-amber-950 p-6 rounded-full border-4 border-[#f4e4bc] shadow-2xl relative z-10 animate-bounce">
+                          <Crown size={80} className="text-[#f4e4bc]" />
+                      </div>
+                      <Sparkles className="absolute -top-4 -right-4 text-amber-600 animate-pulse" size={32} />
+                      <Sparkles className="absolute -bottom-4 -left-4 text-amber-700 animate-pulse" style={{ animationDelay: '1s' }} size={24} />
+                   </div>
+                </div>
+
+                <div className="mt-12 w-full">
+                    <h2 className="text-5xl rpg-font font-black text-[#2c1810] mb-2 tracking-tighter uppercase drop-shadow-sm">НОВЫЙ ТИТУЛ</h2>
+                    <div className="h-0.5 w-full bg-gradient-to-r from-transparent via-amber-950/20 to-transparent mb-6" />
+                    
+                    <div className="relative inline-block px-8 py-4 mb-10">
+                        <div className="absolute inset-0 bg-amber-900/5 rounded-xl border border-amber-900/10 rotate-1" />
+                        <div className={`text-3xl rpg-font font-black relative z-10 ${titleInfo.color} drop-shadow-[1px_1px_rgba(255,255,255,0.5)]`}>
+                            {titleInfo.full}
+                        </div>
+                        <div className="absolute -top-2 -left-2"><Zap className="text-amber-600/40" size={20} /></div>
+                        <div className="absolute -bottom-2 -right-2"><Zap className="text-amber-600/40" size={20} /></div>
                     </div>
-                    <h2 className="text-4xl rpg-font text-transparent bg-clip-text bg-gradient-to-b from-amber-200 to-amber-500 font-bold mb-2 drop-shadow-sm">
-                        НОВЫЙ УРОВЕНЬ!
-                    </h2>
-                    <p className="text-slate-300 text-lg mb-8 leading-relaxed">
-                        Поздравляем! Вы достигли уровня <span className="text-amber-400 font-bold text-2xl">{levelUpData}</span>.
+
+                    <p className="text-amber-900/60 quote-font italic mb-10 text-xl leading-relaxed">
+                        Твои свершения эхом разносятся по всему королевству. Твой путь продолжается!
                     </p>
-                    <button onClick={() => setShowLevelUpModal(false)} className="bg-amber-600 text-white px-8 py-3 rounded-lg font-bold w-full uppercase">
-                        Продолжить Путь
+
+                    <button 
+                      onClick={() => setShowLevelUpModal(false)} 
+                      className="group relative bg-amber-950 hover:bg-amber-900 text-white px-16 py-5 rounded-xl font-black uppercase tracking-[0.2em] transition-all shadow-[0_10px_30px_rgba(62,39,35,0.3)] hover:shadow-[0_15px_40px_rgba(62,39,35,0.5)] active:scale-95 overflow-hidden"
+                    >
+                        <span className="relative z-10">Продолжить</span>
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
                     </button>
                 </div>
             </div>
         </div>
       )}
 
-      {/* Header */}
-      <header className="bg-slate-900 border-b border-slate-800 p-4 sticky top-0 z-30 shadow-lg">
+      {/* FIXED HEADER */}
+      <header className="fixed top-0 left-0 w-full z-50 bg-[#f4e4bc] border-b-2 border-amber-950/20 shadow-[0_4px_10px_rgba(0,0,0,0.1)] py-3 px-4 md:px-6">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-             <div className="bg-gradient-to-br from-indigo-500 to-purple-600 p-2 rounded-lg">
-                <Brain className="text-white w-6 h-6" />
+          <div 
+            className="flex items-center gap-3 cursor-pointer group" 
+            onClick={() => {
+              setCurrentView('dashboard');
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+          >
+             <div className="relative bg-[#3e2723] p-1.5 rounded-lg border border-amber-800/40 shadow-sm transition-transform group-hover:scale-105">
+                <div className="relative w-7 h-7 flex items-center justify-center">
+                    <ShieldHalf className="text-stone-300 absolute inset-0 w-full h-full opacity-30" />
+                    <Sword className="text-white absolute w-4 h-4 -rotate-45 z-10" />
+                    <Flame className="text-amber-400 absolute bottom-0 w-3 h-3 animate-pulse z-20" />
+                </div>
              </div>
-             <h1 className="text-xl font-bold rpg-font bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">
-                LifeRPG
-             </h1>
+             
+             <div className="flex flex-col">
+                <div className="flex items-baseline gap-1">
+                  <span className="text-lg font-black rpg-font text-amber-950 tracking-tighter uppercase leading-none">Discipline</span>
+                  <span className="text-xl font-black rpg-font text-amber-800 tracking-tight leading-none">Hero</span>
+                </div>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                    <div className="text-[8px] font-black uppercase tracking-[0.2em] flex gap-1.5 items-center">
+                        <span className={`${titleInfo.rankColor}`}>{titleInfo.rank}</span>
+                        <span className="w-0.5 h-0.5 rounded-full bg-amber-800/40"></span>
+                        <span className={`${titleInfo.color}`}>{titleInfo.spec}</span>
+                    </div>
+                </div>
+             </div>
           </div>
           
           <div className="flex items-center gap-4">
-              <div className="flex flex-col items-end mr-2">
+              <div className="flex flex-col items-end text-right">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-400 font-bold uppercase tracking-widest">Lvl {stats.level}</span>
-                    <span className={`text-[10px] font-bold ${useMemo(() => {
-                        const today = new Date().toISOString().split('T')[0];
-                        const log = logs.find(l => l.date === today);
-                        if (!log) return 'text-slate-600';
-                        return 'text-emerald-400';
-                    }, [logs])}`}>
-                        {useMemo(() => {
-                            const today = new Date().toISOString().split('T')[0];
-                            const log = logs.find(l => l.date === today);
-                            if (!log) return '+0 XP';
-                            
-                            // Calculate daily XP change
-                            let dailyXP = 0;
-                            log.completedTaskIds.forEach(id => {
-                                // Is it a stage?
-                                let task = tasks.find(t => t.id === id);
-                                if (task) {
-                                    if (task.type === TaskType.NEGATIVE) {
-                                        dailyXP -= (TASK_PENALTIES[task.id] || DEFAULT_PENALTY);
-                                    } else {
-                                        dailyXP += task.difficulty ? XP_RATES[task.difficulty] : XP_PER_TASK;
-                                    }
-                                } else {
-                                    // Try find stage
-                                    for (const t of tasks) {
-                                        const stage = t.stages?.find(s => s.id === id);
-                                        if (stage) {
-                                            dailyXP += XP_RATES[stage.difficulty];
-                                            break;
-                                        }
-                                    }
-                                }
-                            });
-                            return (dailyXP >= 0 ? '+' : '') + dailyXP + ' XP';
-                        }, [logs, tasks])}
+                    <span className="text-[10px] text-amber-950 font-black uppercase tracking-widest leading-none">
+                      {profile.name} <span className="text-amber-800 ml-1">Lvl {stats.level}</span>
                     </span>
                   </div>
-                  <div className="w-24 sm:w-32 h-2 bg-slate-800 rounded-full mt-1 overflow-hidden">
-                      <div className="h-full bg-gradient-to-r from-green-400 to-emerald-600 transition-all duration-500" style={{ width: `${Math.max(0, (stats.xp % XP_TO_LEVEL_UP) / XP_TO_LEVEL_UP * 100)}%` }} />
+                  <div className="w-24 sm:w-40 h-2 bg-amber-900/10 rounded-full mt-1.5 overflow-hidden border border-amber-900/20 shadow-inner p-0.5">
+                      <div 
+                        className="h-full bg-gradient-to-r from-amber-800 to-amber-600 rounded-full transition-all duration-700 ease-out" 
+                        style={{ width: `${Math.max(0, (stats.xp % XP_TO_LEVEL_UP) / XP_TO_LEVEL_UP * 100)}%` }} 
+                      />
                   </div>
               </div>
           </div>
@@ -313,96 +414,107 @@ const App: React.FC = () => {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto p-4 md:p-6">
-        
+      <main className="max-w-4xl mx-auto p-4 md:p-6 pt-24 md:pt-28 relative z-10">
         {currentView === 'dashboard' && (
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-in fade-in duration-300">
-            <div className="lg:col-span-4 space-y-6">
-                <div className="bg-slate-900/80 p-6 rounded-xl border border-slate-800 relative overflow-hidden">
-                    <h3 className="text-emerald-400 text-sm font-bold uppercase tracking-widest mb-2 flex items-center gap-2">
-                        <Brain size={14} /> Мудрость Оракула
-                    </h3>
-                    <p className="text-slate-300 italic font-medium leading-relaxed">"{oracleMessage}"</p>
-                    <button onClick={handleConsultOracle} disabled={isOracleLoading} className="mt-4 text-xs text-indigo-400 underline flex items-center gap-1">
-                       {isOracleLoading ? <Sparkles className="animate-spin w-3 h-3" /> : <ScrollText className="w-3 h-3" />} Спросить совет
-                    </button>
-                </div>
-                <StatRadar stats={stats} />
-                <div className="grid grid-cols-2 gap-3">
-                   {/* Stat boxes omitted for brevity */}
+          <div className="space-y-8 animate-in fade-in duration-300">
+            {/* Oracle Wisdom */}
+            <div className="relative group overflow-hidden rounded-lg border border-amber-900/10 bg-[#fdf2d9]/60 p-6 shadow-sm backdrop-blur-sm">
+                <div className="relative z-10">
+                    <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-amber-950 text-xs font-bold uppercase tracking-[0.2em] rpg-font flex items-center gap-2">
+                            <Library size={16} /> Мудрость Оракула
+                        </h3>
+                    </div>
+                    <div className="relative px-2">
+                        <Quote className="absolute -top-2 -left-2 text-amber-900 opacity-10" size={36} />
+                        <p className="relative z-10 text-lg md:text-xl quote-font italic leading-relaxed text-[#2c1810]">
+                            {oracleMessage}
+                        </p>
+                    </div>
+                    <div className="mt-4 pt-4 border-t border-amber-900/10 flex items-center justify-between">
+                        <button 
+                            onClick={handleConsultOracle} 
+                            disabled={isOracleLoading} 
+                            className="text-xs text-amber-950 hover:text-amber-700 flex items-center gap-2 transition-colors font-bold uppercase tracking-wider"
+                        >
+                            {isOracleLoading ? <Sparkles className="animate-spin w-3 h-3" /> : <ScrollText className="w-3 h-3" />}
+                            {isOracleLoading ? 'Спрашиваю...' : 'Новый совет'}
+                        </button>
+                        <span className="text-[9px] text-amber-900/40 font-bold uppercase tracking-widest italic">Шепот веков</span>
+                    </div>
                 </div>
             </div>
 
-            <div className="lg:col-span-8 space-y-6">
-                <div className="bg-slate-900/50 p-6 rounded-xl border border-slate-800">
-                    <h2 className="text-2xl rpg-font text-white mb-6 border-b border-slate-700 pb-2">Журнал Задач</h2>
-                    <WeekView 
-                        tasks={tasks} 
-                        logs={logs}
-                        onToggleTask={handleToggleTask}
-                        onAddTask={() => {}} 
-                        onDeleteTask={handleDeleteTask}
-                        onUpdateTask={handleUpdateTask}
-                    />
+            <StatRadar stats={stats} />
+
+            <div className="bg-[#fdf2d9]/40 p-6 rounded-lg border border-amber-900/10 shadow-sm backdrop-blur-sm">
+                <div className="flex items-center gap-3 mb-6">
+                    <Sword className="text-amber-900/60" size={24} />
+                    <h2 className="text-2xl rpg-font text-amber-950 uppercase tracking-wide">Летопись Подвигов</h2>
                 </div>
-                <ProgressHistoryChart tasks={tasks} logs={logs} />
+                <WeekView 
+                  tasks={tasks} 
+                  logs={logs} 
+                  onToggleTask={handleToggleTask} 
+                  onAddTask={handleAddTask} 
+                  onDeleteTask={handleDeleteTask} 
+                  onUpdateTask={handleUpdateTask} 
+                />
             </div>
+
+            <ProgressHistoryChart tasks={tasks} logs={logs} />
+          </div>
+        )}
+
+        {currentView === 'challenges' && (
+          <div className="bg-[#fdf2d9]/40 p-6 rounded-xl border border-amber-900/10 shadow-sm backdrop-blur-sm">
+             <ChallengesPage challenges={challenges} onAccept={handleAcceptChallenge} onClaim={handleClaimChallenge} />
           </div>
         )}
 
         {currentView === 'pomodoro' && (
-          <PomodoroPage 
-            tasks={tasks}
-            onCompleteTask={handleCompleteTaskFromTimer}
-            onBack={() => setCurrentView('dashboard')}
-          />
+           <div className="bg-[#fdf2d9]/40 p-6 rounded-xl border border-amber-900/10 shadow-sm backdrop-blur-sm">
+             <PomodoroPage tasks={tasks} onCompleteTask={handleCompleteTaskFromTimer} onBack={() => setCurrentView('dashboard')} />
+           </div>
         )}
 
         {currentView === 'projects' && (
-            <ProjectsPage 
-                tasks={tasks}
-                onAddProject={handleAddProject}
-                onDeleteProject={handleDeleteTask}
-                onAddStage={handleAddStage}
-                onDeleteStage={handleDeleteStage}
-                onUpdateStage={handleUpdateStage}
-            />
+           <div className="bg-[#fdf2d9]/40 p-6 rounded-xl border border-amber-900/10 shadow-sm backdrop-blur-sm">
+              <ProjectsPage 
+                tasks={tasks} 
+                logs={logs} 
+                onAddProject={handleAddProject} 
+                onDeleteProject={handleDeleteProject} 
+                onUpdateProject={handleUpdateProject}
+                onAddStage={handleAddStage} 
+                onDeleteStage={handleDeleteStage} 
+                onUpdateStage={handleUpdateStage} 
+              />
+           </div>
         )}
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 w-full bg-slate-900/95 backdrop-blur border-t border-slate-800 z-40 pb-safe">
-        <div className="flex justify-around items-center p-2 max-w-lg mx-auto">
-            <button 
-                onClick={() => setCurrentView('dashboard')}
-                className={`flex flex-col items-center gap-1 p-2 w-full transition-colors ${currentView === 'dashboard' ? 'text-indigo-400' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-                <LayoutDashboard size={24} />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Дашборд</span>
+      <nav className="fixed bottom-0 left-0 w-full bg-[#e8d2ac]/90 backdrop-blur-lg border-t border-amber-900/20 z-40 pb-safe shadow-lg">
+        <div className="flex justify-around items-center p-2 max-w-2xl mx-auto">
+            <button onClick={() => setCurrentView('dashboard')} className={`flex flex-col items-center gap-1 p-2 w-full transition-all duration-300 ${currentView === 'dashboard' ? 'text-amber-900 scale-110 drop-shadow-[0_0_5px_rgba(120,53,15,0.2)]' : 'text-amber-900/40 hover:text-amber-900'}`}>
+                <Castle size={22} />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Зал</span>
             </button>
-            
-            <div className="w-px h-8 bg-slate-800" />
-
-            <button 
-                onClick={() => setCurrentView('pomodoro')}
-                className={`flex flex-col items-center gap-1 p-2 w-full transition-colors ${currentView === 'pomodoro' ? 'text-amber-400' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-                <Timer size={24} />
+            <button onClick={() => setCurrentView('challenges')} className={`flex flex-col items-center gap-1 p-2 w-full transition-all duration-300 ${currentView === 'challenges' ? 'text-amber-900 scale-110 drop-shadow-[0_0_5px_rgba(120,53,15,0.2)]' : 'text-amber-900/40 hover:text-amber-900'}`}>
+                <ShieldCheck size={22} />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Испытания</span>
+            </button>
+            <button onClick={() => setCurrentView('pomodoro')} className={`flex flex-col items-center gap-1 p-2 w-full transition-all duration-300 ${currentView === 'pomodoro' ? 'text-amber-900 scale-110 drop-shadow-[0_0_5px_rgba(120,53,15,0.2)]' : 'text-amber-900/40 hover:text-amber-900'}`}>
+                <Flame size={22} />
                 <span className="text-[10px] font-bold uppercase tracking-wider">Квесты</span>
             </button>
-
-            <div className="w-px h-8 bg-slate-800" />
-
-            <button 
-                onClick={() => setCurrentView('projects')}
-                className={`flex flex-col items-center gap-1 p-2 w-full transition-colors ${currentView === 'projects' ? 'text-emerald-400' : 'text-slate-500 hover:text-slate-300'}`}
-            >
-                <Briefcase size={24} />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Проекты</span>
+            <button onClick={() => setCurrentView('projects')} className={`flex flex-col items-center gap-1 p-2 w-full transition-all duration-300 ${currentView === 'projects' ? 'text-amber-900 scale-110 drop-shadow-[0_0_5px_rgba(120,53,15,0.2)]' : 'text-amber-900/40 hover:text-amber-900'}`}>
+                <MapIcon size={22} />
+                <span className="text-[10px] font-bold uppercase tracking-wider">Кампании</span>
             </button>
         </div>
       </nav>
-
     </div>
   );
 };

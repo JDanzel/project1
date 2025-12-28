@@ -1,9 +1,8 @@
-import { Category, Task, TaskType, Difficulty } from './types';
+import { Category, Task, TaskType, Difficulty, Challenge } from './types';
 
-export const XP_PER_TASK = 10; // Fallback default
+export const XP_PER_TASK = 10;
 export const XP_TO_LEVEL_UP = 100;
 
-// Specific penalties for negative habits
 export const TASK_PENALTIES: Record<string, number> = {
   'neg_sugar': 30,
   'neg_fastfood': 20,
@@ -25,8 +24,26 @@ export const TASK_DURATIONS: Record<string, number> = {
   'const_read': 25 * 60
 };
 
+export const LEVEL_RANKS = [
+  { minLevel: 1, title: 'Новобранец', color: 'text-stone-500' },
+  { minLevel: 5, title: 'Младший', color: 'text-stone-400' },
+  { minLevel: 10, title: 'Опытный', color: 'text-emerald-600' },
+  { minLevel: 20, title: 'Закаленный', color: 'text-blue-600' },
+  { minLevel: 35, title: 'Элитный', color: 'text-indigo-600' },
+  { minLevel: 50, title: 'Высший', color: 'text-purple-600' },
+  { minLevel: 75, title: 'Великий', color: 'text-amber-600' },
+  { minLevel: 100, title: 'Божественный', color: 'text-red-600' },
+];
+
+export const SPECIALIZATIONS: Record<Category | 'BALANCED', { name: string, color: string }> = {
+  [Category.PHYSICAL]: { name: 'Атлет', color: 'text-red-600' },
+  [Category.INTELLECT]: { name: 'Эрудит', color: 'text-amber-500' },
+  [Category.HEALTH]: { name: 'Стоик', color: 'text-emerald-600' },
+  [Category.PROFESSIONAL]: { name: 'Мастер', color: 'text-blue-600' },
+  'BALANCED': { name: 'Авантюрист', color: 'text-stone-500' }
+};
+
 export const PREDEFINED_TASKS: Task[] = [
-  // Basic Tasks
   {
     id: 'basic_charge',
     name: 'Утренняя зарядка',
@@ -51,8 +68,6 @@ export const PREDEFINED_TASKS: Task[] = [
     type: TaskType.BASIC,
     affectedCategories: [Category.HEALTH]
   },
-  
-  // Constant Tasks
   {
     id: 'const_run',
     name: 'Бег',
@@ -83,8 +98,6 @@ export const PREDEFINED_TASKS: Task[] = [
     type: TaskType.CONSTANT,
     affectedCategories: [Category.INTELLECT]
   },
-
-  // Negative Habits
   {
     id: 'neg_sugar',
     name: 'Сахар / Сладкое',
@@ -102,5 +115,52 @@ export const PREDEFINED_TASKS: Task[] = [
     name: 'Думскроллинг',
     type: TaskType.NEGATIVE,
     affectedCategories: [Category.INTELLECT]
+  }
+];
+
+export const PREDEFINED_CHALLENGES: Challenge[] = [
+  {
+    id: 'chal_sugar_detox',
+    title: 'Сахарный Детокс',
+    description: 'Продержись 5 дней без сахара и сладкого.',
+    type: 'avoidance',
+    targetTaskId: 'neg_sugar',
+    durationDays: 5,
+    rewardXP: 150,
+    status: 'available',
+    progress: 0
+  },
+  {
+    id: 'chal_runner',
+    title: 'Путь Ветра',
+    description: 'Выходи на пробежку 3 дня подряд.',
+    type: 'streak',
+    targetTaskId: 'const_run',
+    durationDays: 3,
+    rewardXP: 100,
+    status: 'available',
+    progress: 0
+  },
+  {
+    id: 'chal_scholar',
+    title: 'Мудрец',
+    description: 'Читай книги 4 дня подряд.',
+    type: 'streak',
+    targetTaskId: 'const_read',
+    durationDays: 4,
+    rewardXP: 120,
+    status: 'available',
+    progress: 0
+  },
+  {
+    id: 'chal_morning',
+    title: 'Утренний Страж',
+    description: 'Делай утреннюю зарядку 7 дней подряд.',
+    type: 'streak',
+    targetTaskId: 'basic_charge',
+    durationDays: 7,
+    rewardXP: 200,
+    status: 'available',
+    progress: 0
   }
 ];
